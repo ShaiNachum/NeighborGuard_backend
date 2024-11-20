@@ -1,0 +1,224 @@
+basePath: /
+definitions:
+  schemas.SearchUsersResponseSchema:
+    properties:
+      users:
+        items:
+          $ref: '#/definitions/services.ExtendedUser'
+        type: array
+    type: object
+  services.Address:
+    properties:
+      apartmentNumber:
+        type: integer
+      city:
+        type: string
+      houseNumber:
+        type: integer
+      street:
+        type: string
+    type: object
+  services.ExtendedUser:
+    properties:
+      address:
+        $ref: '#/definitions/services.Address'
+      age:
+        type: integer
+      createdAt:
+        type: string
+      email:
+        type: string
+      firstName:
+        type: string
+      gender:
+        $ref: '#/definitions/services.Gender'
+      id:
+        type: string
+      languages:
+        items:
+          type: string
+        type: array
+      lastName:
+        type: string
+      lonLat:
+        $ref: '#/definitions/services.LonLat'
+      meetings:
+        items:
+          $ref: '#/definitions/services.Meeting'
+        type: array
+      password:
+        type: string
+      phoneNumber:
+        type: integer
+      role:
+        $ref: '#/definitions/services.Role'
+      services:
+        items:
+          type: string
+        type: array
+      updatedAt:
+        type: string
+    type: object
+  services.Gender:
+    enum:
+    - male
+    - female
+    type: string
+    x-enum-varnames:
+    - Male
+    - Female
+  services.LonLat:
+    properties:
+      latitude:
+        type: number
+      longitude:
+        type: number
+    type: object
+  services.Meeting:
+    properties:
+      date:
+        type: string
+      recipient:
+        $ref: '#/definitions/services.User'
+      volunteer:
+        $ref: '#/definitions/services.User'
+    type: object
+  services.NewUser:
+    properties:
+      address:
+        $ref: '#/definitions/services.Address'
+      age:
+        type: integer
+      email:
+        type: string
+      firstName:
+        type: string
+      gender:
+        $ref: '#/definitions/services.Gender'
+      languages:
+        items:
+          type: string
+        type: array
+      lastName:
+        type: string
+      lonLat:
+        $ref: '#/definitions/services.LonLat'
+      password:
+        type: string
+      phoneNumber:
+        type: integer
+      role:
+        $ref: '#/definitions/services.Role'
+      services:
+        items:
+          type: string
+        type: array
+    type: object
+  services.Role:
+    enum:
+    - volunteer
+    - recipient
+    type: string
+    x-enum-varnames:
+    - Volunteer
+    - Recipient
+  services.User:
+    properties:
+      address:
+        $ref: '#/definitions/services.Address'
+      age:
+        type: integer
+      createdAt:
+        type: string
+      email:
+        type: string
+      firstName:
+        type: string
+      gender:
+        $ref: '#/definitions/services.Gender'
+      id:
+        type: string
+      languages:
+        items:
+          type: string
+        type: array
+      lastName:
+        type: string
+      lonLat:
+        $ref: '#/definitions/services.LonLat'
+      password:
+        type: string
+      phoneNumber:
+        type: integer
+      role:
+        $ref: '#/definitions/services.Role'
+      services:
+        items:
+          type: string
+        type: array
+      updatedAt:
+        type: string
+    type: object
+host: localhost:8080
+info:
+  contact: {}
+  description: This is the NeighborGuard API documentation.
+  title: NeighborGuard API
+  version: "1.0"
+paths:
+  /users:
+    get:
+      description: Get all users, optionally filtered by email
+      parameters:
+      - description: Email to filter users
+        in: query
+        name: email
+        type: string
+      - description: To extend meeting
+        in: query
+        name: toExtendMeeting
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/schemas.SearchUsersResponseSchema'
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get all users
+      tags:
+      - users
+    post:
+      consumes:
+      - application/json
+      description: Create a new user
+      parameters:
+      - description: User object that needs to be created
+        in: body
+        name: user
+        required: true
+        schema:
+          $ref: '#/definitions/services.NewUser'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/services.User'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Create a new user
+      tags:
+      - users
+swagger: "2.0"
