@@ -15,35 +15,147 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
-        "/users": {
-            "get": {
-                "description": "Get all users, optionally filtered by email",
+        "/meeting": {
+            "post": {
+                "description": "Create a new meeting between a volunteer and a recipient",
+                "consumes": [
+                    "application/json"
+                ],
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "users"
+                    "meeting"
                 ],
-                "summary": "Get all users",
+                "summary": "Create a new meeting",
                 "parameters": [
                     {
-                        "type": "string",
-                        "description": "Email to filter users",
-                        "name": "email",
-                        "in": "query"
-                    },
-                    {
-                        "type": "boolean",
-                        "description": "To extend meeting",
-                        "name": "toExtendMeeting",
-                        "in": "query"
+                        "description": "Meeting to create",
+                        "name": "meeting",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/services.NewMeeting"
+                        }
                     }
                 ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/schemas.SearchUsersResponseSchema"
+                            "$ref": "#/definitions/services.Meeting"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/meeting/{id}": {
+            "delete": {
+                "description": "Cancel a meeting and update recipient's status",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "meeting"
+                ],
+                "summary": "Cancel an existing meeting",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Meeting ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/meeting/{id}/status": {
+            "put": {
+                "description": "Update the status of an existing meeting",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "meeting"
+                ],
+                "summary": "Update meeting status",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Meeting ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "New meeting status (IS_PICKED or DONE)",
+                        "name": "status",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/services.Meeting"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
                         }
                     },
                     "404": {
@@ -54,9 +166,75 @@ const docTemplate = `{
                                 "type": "string"
                             }
                         }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
                     }
                 }
-            },
+            }
+        },
+        "/meetings": {
+            "get": {
+                "description": "Get meetings filtered by user ID (recipient or volunteer) and meeting status",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "meetings"
+                ],
+                "summary": "Get meetings based on filters",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "User ID to filter meetings (can be recipient or volunteer)",
+                        "name": "userId",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Meeting status to filter (IS_PICKED or DONE)",
+                        "name": "status",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/services.Meeting"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/user": {
             "post": {
                 "description": "Create a new user",
                 "consumes": [
@@ -66,7 +244,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "users"
+                    "user"
                 ],
                 "summary": "Create a new user",
                 "parameters": [
@@ -98,6 +276,229 @@ const docTemplate = `{
                     }
                 }
             }
+        },
+        "/user/{email}": {
+            "get": {
+                "description": "Get a single user by their email address",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "user"
+                ],
+                "summary": "Get user by email",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "User email",
+                        "name": "email",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/services.User"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/users": {
+            "get": {
+                "description": "Get all users with optional filters",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "users"
+                ],
+                "summary": "Get all users",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Email to filter users",
+                        "name": "email",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Role to filter users",
+                        "name": "role",
+                        "in": "query"
+                    },
+                    {
+                        "type": "number",
+                        "description": "Filter by latitude",
+                        "name": "filterByLat",
+                        "in": "query"
+                    },
+                    {
+                        "type": "number",
+                        "description": "Filter by longitude",
+                        "name": "filterByLon",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Is required assistance",
+                        "name": "isRequiredAssistance",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/schemas.SearchUsersResponseSchema"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/users/recipients": {
+            "get": {
+                "description": "Get recipients who need assistance matching volunteer's languages and services",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "users"
+                ],
+                "summary": "Get nearby recipients needing assistance",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Volunteer's UID",
+                        "name": "volunteerUID",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "number",
+                        "description": "Filter by latitude",
+                        "name": "filterByLat",
+                        "in": "query"
+                    },
+                    {
+                        "type": "number",
+                        "description": "Filter by longitude",
+                        "name": "filterByLon",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/schemas.SearchUsersResponseSchema"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/users/{uid}": {
+            "put": {
+                "description": "Update an existing user's information",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "user"
+                ],
+                "summary": "Update an existing user",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "User ID",
+                        "name": "uid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Updated user information",
+                        "name": "user",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/services.User"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
         }
     },
     "definitions": {
@@ -107,7 +508,7 @@ const docTemplate = `{
                 "users": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/services.ExtendedUser"
+                        "$ref": "#/definitions/services.User"
                     }
                 }
             }
@@ -129,73 +530,24 @@ const docTemplate = `{
                 }
             }
         },
-        "services.ExtendedUser": {
-            "type": "object",
-            "properties": {
-                "address": {
-                    "$ref": "#/definitions/services.Address"
-                },
-                "age": {
-                    "type": "integer"
-                },
-                "createdAt": {
-                    "type": "string"
-                },
-                "email": {
-                    "type": "string"
-                },
-                "firstName": {
-                    "type": "string"
-                },
-                "gender": {
-                    "$ref": "#/definitions/services.Gender"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "languages": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "lastName": {
-                    "type": "string"
-                },
-                "lonLat": {
-                    "$ref": "#/definitions/services.LonLat"
-                },
-                "meetings": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/services.Meeting"
-                    }
-                },
-                "password": {
-                    "type": "string"
-                },
-                "phoneNumber": {
-                    "type": "integer"
-                },
-                "role": {
-                    "$ref": "#/definitions/services.Role"
-                },
-                "services": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "updatedAt": {
-                    "type": "string"
-                }
-            }
+        "services.AssistanceStatus": {
+            "type": "string",
+            "enum": [
+                "DO_NOT_NEED_ASSISTANCE",
+                "NEED_ASSISTANCE",
+                "IN_PROGRESS"
+            ],
+            "x-enum-varnames": [
+                "DoNotNeedAssistance",
+                "NeedAssistance",
+                "InProgress"
+            ]
         },
         "services.Gender": {
             "type": "string",
             "enum": [
-                "male",
-                "female"
+                "MALE",
+                "FEMALE"
             ],
             "x-enum-varnames": [
                 "Male",
@@ -216,8 +568,48 @@ const docTemplate = `{
         "services.Meeting": {
             "type": "object",
             "properties": {
-                "date": {
+                "createdAt": {
                     "type": "string"
+                },
+                "date": {
+                    "type": "integer"
+                },
+                "meetingStatus": {
+                    "$ref": "#/definitions/services.MeetingStatus"
+                },
+                "recipient": {
+                    "$ref": "#/definitions/services.User"
+                },
+                "uid": {
+                    "type": "string"
+                },
+                "updatedAt": {
+                    "type": "string"
+                },
+                "volunteer": {
+                    "$ref": "#/definitions/services.User"
+                }
+            }
+        },
+        "services.MeetingStatus": {
+            "type": "string",
+            "enum": [
+                "IS_PICKED",
+                "DONE"
+            ],
+            "x-enum-varnames": [
+                "IsPicked",
+                "Done"
+            ]
+        },
+        "services.NewMeeting": {
+            "type": "object",
+            "properties": {
+                "date": {
+                    "type": "integer"
+                },
+                "meetingStatus": {
+                    "$ref": "#/definitions/services.MeetingStatus"
                 },
                 "recipient": {
                     "$ref": "#/definitions/services.User"
@@ -236,6 +628,9 @@ const docTemplate = `{
                 "age": {
                     "type": "integer"
                 },
+                "assistanceStatus": {
+                    "$ref": "#/definitions/services.AssistanceStatus"
+                },
                 "email": {
                     "type": "string"
                 },
@@ -254,6 +649,9 @@ const docTemplate = `{
                 "lastName": {
                     "type": "string"
                 },
+                "lastOK": {
+                    "type": "integer"
+                },
                 "lonLat": {
                     "$ref": "#/definitions/services.LonLat"
                 },
@@ -261,7 +659,10 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "phoneNumber": {
-                    "type": "integer"
+                    "type": "string"
+                },
+                "profileImage": {
+                    "type": "string"
                 },
                 "role": {
                     "$ref": "#/definitions/services.Role"
@@ -277,8 +678,8 @@ const docTemplate = `{
         "services.Role": {
             "type": "string",
             "enum": [
-                "volunteer",
-                "recipient"
+                "VOLUNTEER",
+                "RECIPIENT"
             ],
             "x-enum-varnames": [
                 "Volunteer",
@@ -294,6 +695,9 @@ const docTemplate = `{
                 "age": {
                     "type": "integer"
                 },
+                "assistanceStatus": {
+                    "$ref": "#/definitions/services.AssistanceStatus"
+                },
                 "createdAt": {
                     "type": "string"
                 },
@@ -306,9 +710,6 @@ const docTemplate = `{
                 "gender": {
                     "$ref": "#/definitions/services.Gender"
                 },
-                "id": {
-                    "type": "string"
-                },
                 "languages": {
                     "type": "array",
                     "items": {
@@ -318,6 +719,9 @@ const docTemplate = `{
                 "lastName": {
                     "type": "string"
                 },
+                "lastOK": {
+                    "type": "integer"
+                },
                 "lonLat": {
                     "$ref": "#/definitions/services.LonLat"
                 },
@@ -325,7 +729,10 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "phoneNumber": {
-                    "type": "integer"
+                    "type": "string"
+                },
+                "profileImage": {
+                    "type": "string"
                 },
                 "role": {
                     "$ref": "#/definitions/services.Role"
@@ -335,6 +742,9 @@ const docTemplate = `{
                     "items": {
                         "type": "string"
                     }
+                },
+                "uid": {
+                    "type": "string"
                 },
                 "updatedAt": {
                     "type": "string"
@@ -347,7 +757,7 @@ const docTemplate = `{
 // SwaggerInfo holds exported Swagger Info so clients can modify it
 var SwaggerInfo = &swag.Spec{
 	Version:          "1.0",
-	Host:             "localhost:8080",
+	Host:             "",
 	BasePath:         "/",
 	Schemes:          []string{},
 	Title:            "NeighborGuard API",

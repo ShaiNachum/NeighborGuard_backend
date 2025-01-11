@@ -15,7 +15,6 @@ import (
 // @title NeighborGuard API
 // @version 1.0
 // @description This is the NeighborGuard API documentation.
-// @host localhost:8080
 // @BasePath /
 func main() {
 	const PORT string = "8080"
@@ -30,4 +29,5 @@ func main() {
 
 	log.Printf("Server running on port %s", PORT)
 	http.ListenAndServe(":"+PORT, router)
+	// host localhost:8080
 }

@@ -4,7 +4,7 @@ definitions:
     properties:
       users:
         items:
-          $ref: '#/definitions/services.ExtendedUser'
+          $ref: '#/definitions/services.User'
         type: array
     type: object
   services.Address:
@@ -18,51 +18,20 @@ definitions:
       street:
         type: string
     type: object
-  services.ExtendedUser:
-    properties:
-      address:
-        $ref: '#/definitions/services.Address'
-      age:
-        type: integer
-      createdAt:
-        type: string
-      email:
-        type: string
-      firstName:
-        type: string
-      gender:
-        $ref: '#/definitions/services.Gender'
-      id:
-        type: string
-      languages:
-        items:
-          type: string
-        type: array
-      lastName:
-        type: string
-      lonLat:
-        $ref: '#/definitions/services.LonLat'
-      meetings:
-        items:
-          $ref: '#/definitions/services.Meeting'
-        type: array
-      password:
-        type: string
-      phoneNumber:
-        type: integer
-      role:
-        $ref: '#/definitions/services.Role'
-      services:
-        items:
-          type: string
-        type: array
-      updatedAt:
-        type: string
-    type: object
+  services.AssistanceStatus:
+    enum:
+    - DO_NOT_NEED_ASSISTANCE
+    - NEED_ASSISTANCE
+    - IN_PROGRESS
+    type: string
+    x-enum-varnames:
+    - DoNotNeedAssistance
+    - NeedAssistance
+    - InProgress
   services.Gender:
     enum:
-    - male
-    - female
+    - MALE
+    - FEMALE
     type: string
     x-enum-varnames:
     - Male
@@ -76,8 +45,35 @@ definitions:
     type: object
   services.Meeting:
     properties:
-      date:
+      createdAt:
         type: string
+      date:
+        type: integer
+      meetingStatus:
+        $ref: '#/definitions/services.MeetingStatus'
+      recipient:
+        $ref: '#/definitions/services.User'
+      uid:
+        type: string
+      updatedAt:
+        type: string
+      volunteer:
+        $ref: '#/definitions/services.User'
+    type: object
+  services.MeetingStatus:
+    enum:
+    - IS_PICKED
+    - DONE
+    type: string
+    x-enum-varnames:
+    - IsPicked
+    - Done
+  services.NewMeeting:
+    properties:
+      date:
+        type: integer
+      meetingStatus:
+        $ref: '#/definitions/services.MeetingStatus'
       recipient:
         $ref: '#/definitions/services.User'
       volunteer:
@@ -89,6 +85,8 @@ definitions:
         $ref: '#/definitions/services.Address'
       age:
         type: integer
+      assistanceStatus:
+        $ref: '#/definitions/services.AssistanceStatus'
       email:
         type: string
       firstName:
@@ -101,12 +99,16 @@ definitions:
         type: array
       lastName:
         type: string
+      lastOK:
+        type: integer
       lonLat:
         $ref: '#/definitions/services.LonLat'
       password:
         type: string
       phoneNumber:
-        type: integer
+        type: string
+      profileImage:
+        type: string
       role:
         $ref: '#/definitions/services.Role'
       services:
@@ -116,8 +118,8 @@ definitions:
     type: object
   services.Role:
     enum:
-    - volunteer
-    - recipient
+    - VOLUNTEER
+    - RECIPIENT
     type: string
     x-enum-varnames:
     - Volunteer
@@ -128,6 +130,8 @@ definitions:
         $ref: '#/definitions/services.Address'
       age:
         type: integer
+      assistanceStatus:
+        $ref: '#/definitions/services.AssistanceStatus'
       createdAt:
         type: string
       email:
@@ -136,64 +140,185 @@ definitions:
         type: string
       gender:
         $ref: '#/definitions/services.Gender'
-      id:
-        type: string
       languages:
         items:
           type: string
         type: array
       lastName:
         type: string
+      lastOK:
+        type: integer
       lonLat:
         $ref: '#/definitions/services.LonLat'
       password:
         type: string
       phoneNumber:
-        type: integer
+        type: string
+      profileImage:
+        type: string
       role:
         $ref: '#/definitions/services.Role'
       services:
         items:
           type: string
         type: array
+      uid:
+        type: string
       updatedAt:
         type: string
     type: object
-host: localhost:8080
 info:
   contact: {}
   description: This is the NeighborGuard API documentation.
   title: NeighborGuard API
   version: "1.0"
 paths:
-  /users:
-    get:
-      description: Get all users, optionally filtered by email
+  /meeting:
+    post:
+      consumes:
+      - application/json
+      description: Create a new meeting between a volunteer and a recipient
       parameters:
-      - description: Email to filter users
-        in: query
-        name: email
-        type: string
-      - description: To extend meeting
-        in: query
-        name: toExtendMeeting
-        type: boolean
+      - description: Meeting to create
+        in: body
+        name: meeting
+        required: true
+        schema:
+          $ref: '#/definitions/services.NewMeeting'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/schemas.SearchUsersResponseSchema'
+            $ref: '#/definitions/services.Meeting'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Create a new meeting
+      tags:
+      - meeting
+  /meeting/{id}:
+    delete:
+      description: Cancel a meeting and update recipient's status
+      parameters:
+      - description: Meeting ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
         "404":
           description: Not Found
           schema:
             additionalProperties:
               type: string
             type: object
-      summary: Get all users
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Cancel an existing meeting
       tags:
-      - users
+      - meeting
+  /meeting/{id}/status:
+    put:
+      consumes:
+      - application/json
+      description: Update the status of an existing meeting
+      parameters:
+      - description: Meeting ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: New meeting status (IS_PICKED or DONE)
+        in: body
+        name: status
+        required: true
+        schema:
+          type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/services.Meeting'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Update meeting status
+      tags:
+      - meeting
+  /meetings:
+    get:
+      description: Get meetings filtered by user ID (recipient or volunteer) and meeting
+        status
+      parameters:
+      - description: User ID to filter meetings (can be recipient or volunteer)
+        in: query
+        name: userId
+        type: string
+      - description: Meeting status to filter (IS_PICKED or DONE)
+        in: query
+        name: status
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/services.Meeting'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get meetings based on filters
+      tags:
+      - meetings
+  /user:
     post:
       consumes:
       - application/json
@@ -219,6 +344,154 @@ paths:
               type: string
             type: object
       summary: Create a new user
+      tags:
+      - user
+  /user/{email}:
+    get:
+      description: Get a single user by their email address
+      parameters:
+      - description: User email
+        in: path
+        name: email
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/services.User'
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get user by email
+      tags:
+      - user
+  /users:
+    get:
+      description: Get all users with optional filters
+      parameters:
+      - description: Email to filter users
+        in: query
+        name: email
+        type: string
+      - description: Role to filter users
+        in: query
+        name: role
+        type: string
+      - description: Filter by latitude
+        in: query
+        name: filterByLat
+        type: number
+      - description: Filter by longitude
+        in: query
+        name: filterByLon
+        type: number
+      - description: Is required assistance
+        in: query
+        name: isRequiredAssistance
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/schemas.SearchUsersResponseSchema'
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get all users
+      tags:
+      - users
+  /users/{uid}:
+    put:
+      consumes:
+      - application/json
+      description: Update an existing user's information
+      parameters:
+      - description: User ID
+        in: path
+        name: uid
+        required: true
+        type: string
+      - description: Updated user information
+        in: body
+        name: user
+        required: true
+        schema:
+          $ref: '#/definitions/services.User'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Update an existing user
+      tags:
+      - user
+  /users/recipients:
+    get:
+      description: Get recipients who need assistance matching volunteer's languages
+        and services
+      parameters:
+      - description: Volunteer's UID
+        in: query
+        name: volunteerUID
+        required: true
+        type: string
+      - description: Filter by latitude
+        in: query
+        name: filterByLat
+        type: number
+      - description: Filter by longitude
+        in: query
+        name: filterByLon
+        type: number
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/schemas.SearchUsersResponseSchema'
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get nearby recipients needing assistance
       tags:
       - users
 swagger: "2.0"
