@@ -9,6 +9,7 @@ import (
 	"github.com/gorilla/mux"
 )
 
+
 // CreateMeeting godoc
 // @Summary Create a new meeting
 // @Description Create a new meeting between a volunteer and a recipient
@@ -42,32 +43,9 @@ func CreateMeeting(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(meeting)
 }
 
-// CancelMeeting godoc
-// @Summary Cancel an existing meeting
-// @Description Cancel a meeting and update recipient's status
-// @Tags meeting
-// @Produce json
-// @Param id path string true "Meeting ID"
-// @Success 200
-// @Failure 404 {object} map[string]string{}
-// @Failure 500 {object} map[string]string{}
-// @Router /meeting/{id} [delete]
-func CancelMeeting(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	meetingID := vars["id"]
 
-	err := services.CancelMeeting(meetingID)
-	if err != nil {
-		if err.Error() == "meeting not found" {
-			http.Error(w, err.Error(), http.StatusNotFound)
-			return
-		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
 
-	w.WriteHeader(http.StatusOK)
-}
+
 
 // GetMeetings godoc
 // @Summary Get meetings based on filters
@@ -103,6 +81,53 @@ func GetMeetings(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response)
 }
 
+// CancelMeeting godoc
+// @Summary Cancel an existing meeting
+// @Description Cancel a meeting by its ID and the user cancelling
+// @Tags meeting
+// @Produce json
+// @Param uid path string true "Meeting ID to cancel"
+// @Param userID path string true "ID of the user cancelling the meeting"
+// @Success 204 "No Content"
+// @Failure 400 {object} map[string]string{}
+// @Failure 404 {object} map[string]string{}
+// @Failure 500 {object} map[string]string{}
+// @Router /meeting/{uid}/{userID} [delete]
+func CancelMeeting(w http.ResponseWriter, r *http.Request) {
+	// Get meeting ID and user ID from URL parameters
+	vars := mux.Vars(r)
+	meetingID := vars["uid"]
+	userID := vars["userID"]
+
+	// Validate inputs
+	if meetingID == "" {
+		http.Error(w, "Meeting ID is required", http.StatusBadRequest)
+		return
+	}
+	if userID == "" {
+		http.Error(w, "User ID is required", http.StatusBadRequest)
+		return
+	}
+
+	// Call the service layer to cancel the meeting
+	err := services.CancelMeeting(meetingID, userID)
+	if err != nil {
+		switch err.Error() {
+		case "meeting not found":
+			http.Error(w, err.Error(), http.StatusNotFound)
+		case "user not found":
+			http.Error(w, err.Error(), http.StatusBadRequest)
+		default:
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+		return
+	}
+
+	// Return 204 No Content on successful cancellation
+	w.WriteHeader(http.StatusNoContent)
+}
+
+
 // UpdateMeetingStatus godoc
 // @Summary Update meeting status
 // @Description Update the status of an existing meeting
@@ -115,11 +140,11 @@ func GetMeetings(w http.ResponseWriter, r *http.Request) {
 // @Failure 400 {object} map[string]string{}
 // @Failure 404 {object} map[string]string{}
 // @Failure 500 {object} map[string]string{}
-// @Router /meeting/{id}/status [put]
+// @Router /meeting/{uid}/status [put]
 func UpdateMeetingStatus(w http.ResponseWriter, r *http.Request) {
 	// Get meeting ID from URL parameters
 	vars := mux.Vars(r)
-	meetingID := vars["id"]
+	meetingID := vars["uid"]
 
 	// Get status from query parameter
 	status := services.MeetingStatus(r.URL.Query().Get("status"))

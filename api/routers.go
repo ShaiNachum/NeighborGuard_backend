@@ -13,7 +13,6 @@ func SetupRoutes(router *mux.Router) *mux.Router {
 	router.HandleFunc("/healthz", middleware.Chain(handlers.HealthHandler, middleware.Logging())).Methods("GET")
 
 	// Collection endpoints (plural)
-	router.HandleFunc("/users", middleware.Chain(handlers.GetUsers, middleware.Logging())).Methods("GET")
 	router.HandleFunc("/users/recipients", middleware.Chain(handlers.GetNearbyRecipients, middleware.Logging())).Methods("GET")
 
 	// Single user endpoints (singular)
@@ -23,8 +22,8 @@ func SetupRoutes(router *mux.Router) *mux.Router {
 
 	// Meeting endpoints
 	router.HandleFunc("/meeting", middleware.Chain(handlers.CreateMeeting, middleware.Logging())).Methods("POST")
-	router.HandleFunc("/meeting/{id}", middleware.Chain(handlers.CancelMeeting, middleware.Logging())).Methods("DELETE")
-	router.HandleFunc("/meeting/{id}/status", middleware.Chain(handlers.UpdateMeetingStatus, middleware.Logging())).Methods("PUT")
+	router.HandleFunc("/meeting/{uid}/{userID}", middleware.Chain(handlers.CancelMeeting, middleware.Logging())).Methods("DELETE")
+	router.HandleFunc("/meeting/{uid}/status", middleware.Chain(handlers.UpdateMeetingStatus, middleware.Logging())).Methods("PUT")
 
 	// Collection endpoint for getting meetings
 	router.HandleFunc("/meetings", middleware.Chain(handlers.GetMeetings, middleware.Logging())).Methods("GET")

@@ -1,9 +1,15 @@
 package services
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"neighborguard/pkg/database"
 	"time"
+
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
 )
 
 type MeetingStatus string
@@ -17,140 +23,303 @@ type NewMeeting struct {
 	Recipient     User          `json:"recipient"`
 	Volunteer     User          `json:"volunteer"`
 	Date          int64         `json:"date"`
+	Services      []string      `json:"services"` //list of services that will be provided on this meeting
 	MeetingStatus MeetingStatus `json:"meetingStatus"`
 }
 
 type Meeting struct {
-	ID            string        `json:"uid"`
-	Recipient     User          `json:"recipient"`
-	Volunteer     User          `json:"volunteer"`
-	Date          int64         `json:"date"`
-	MeetingStatus MeetingStatus `json:"meetingStatus"`
-	CreatedAt     time.Time     `json:"createdAt"`
-	UpdatedAt     time.Time     `json:"updatedAt"`
+	ID            string        `json:"uid" bson:"_id,omitempty"`
+	Recipient     User          `json:"recipient" bson:"-"`       // Not stored directly in MongoDB
+	Volunteer     User          `json:"volunteer" bson:"-"`       // Not stored directly in MongoDB
+	RecipientID   string        `json:"-" bson:"recipientId"`     // Store only the ID in MongoDB
+	VolunteerID   string        `json:"-" bson:"volunteerId"`     // Store only the ID in MongoDB
+	Date          int64         `json:"date" bson:"date"`
+	Services      []string      `json:"services" bson:"services"`
+	MeetingStatus MeetingStatus `json:"meetingStatus" bson:"meetingStatus"`
+	CreatedAt     time.Time     `json:"createdAt" bson:"createdAt"`
+	UpdatedAt     time.Time     `json:"updatedAt" bson:"updatedAt"`
 }
+
+
 
 func CreateMeeting(newMeeting NewMeeting) (Meeting, error) {
-	mu.Lock()
-	defer mu.Unlock()
+    // Create a context with timeout
+    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+    defer cancel()
 
-	now := time.Now()
-	newID := fmt.Sprintf("meeting_%d", len(meetingsStore)+1)
+    now := time.Now()
+    
+    // Verify the recipient exists in MongoDB
+    var recipient User
+    err := database.UsersCollection.FindOne(ctx, bson.M{"_id": newMeeting.Recipient.ID}).Decode(&recipient)
+    if err != nil {
+        if err == mongo.ErrNoDocuments {
+            return Meeting{}, errors.New("recipient not found")
+        }
+        return Meeting{}, err
+    }
 
-	// Validate users exist
-	recipient, exists := usersStore[newMeeting.Recipient.ID]
-	if !exists {
-		return Meeting{}, errors.New("recipient not found")
-	}
-	volunteer, exists := usersStore[newMeeting.Volunteer.ID]
-	if !exists {
-		return Meeting{}, errors.New("volunteer not found")
-	}
+    // Verify the volunteer exists in MongoDB
+    var volunteer User
+    err = database.UsersCollection.FindOne(ctx, bson.M{"_id": newMeeting.Volunteer.ID}).Decode(&volunteer)
+    if err != nil {
+        if err == mongo.ErrNoDocuments {
+            return Meeting{}, errors.New("volunteer not found")
+        }
+        return Meeting{}, err
+    }
 
-	// Add this validation check
-	if recipient.AssistanceStatus == InProgress {
-		return Meeting{}, errors.New("recipient already in progress")
-	}
+    // Identify services that are available (not already InProgress)
+    var availableServices []string
+    
+    // Create update document for MongoDB
+    servicesUpdate := bson.M{"updatedAt": now}
+    
+    for _, service := range newMeeting.Services {
+        if status, exists := recipient.Services[service]; exists && status != InProgress {
+            availableServices = append(availableServices, service)
+            
+            // Update local recipient object's service status
+            recipient.Services[service] = InProgress
+            
+            // Create the field path for this specific service
+            serviceFieldPath := fmt.Sprintf("services.%s", service)
+            
+            // Add to MongoDB update using explicit field path
+            servicesUpdate[serviceFieldPath] = string(InProgress)
+        }
+    }
 
-	// If we get here, the recipient is available, so update their status
-	recipient.AssistanceStatus = InProgress
-	usersStore[recipient.ID] = recipient
+    // If no services are available, return an error
+    if len(availableServices) == 0 {
+        return Meeting{}, errors.New("recipient already in progress")
+    }
 
-	meeting := Meeting{
-		ID:            newID,
-		Recipient:     recipient,
-		Volunteer:     volunteer,
-		Date:          newMeeting.Date,
-		MeetingStatus: newMeeting.MeetingStatus,
-		CreatedAt:     now,
-		UpdatedAt:     now,
-	}
+    // Update the recipient's services in MongoDB using explicit field paths
+    updateResult, err := database.UsersCollection.UpdateOne(
+        ctx,
+        bson.M{"_id": recipient.ID},
+        bson.M{"$set": servicesUpdate},
+    )
+    
+    if err != nil {
+        return Meeting{}, err
+    }
+    
+    if updateResult.ModifiedCount == 0 {
+        return Meeting{}, errors.New("failed to update recipient services")
+    }
+    
+    // Log successful update
+    fmt.Printf("Updated recipient %s services: %+v\n", recipient.ID, updateResult)
 
-	meetingsStore[newID] = meeting
-	return meeting, nil
+    // Create a new meeting with reference IDs and a new MongoDB ObjectID
+    meeting := Meeting{
+        ID:            primitive.NewObjectID().Hex(),
+        RecipientID:   recipient.ID,
+        VolunteerID:   volunteer.ID,
+        Date:          newMeeting.Date,
+        Services:      availableServices,
+        MeetingStatus: newMeeting.MeetingStatus,
+        CreatedAt:     now,
+        UpdatedAt:     now,
+    }
+
+    // For API response, include the full user objects
+    meeting.Recipient = recipient
+    meeting.Volunteer = volunteer
+
+    // Insert the meeting into MongoDB
+    _, err = database.MeetingsCollection.InsertOne(ctx, bson.M{
+        "_id":           meeting.ID,
+        "recipientId":   meeting.RecipientID,
+        "volunteerId":   meeting.VolunteerID,
+        "date":          meeting.Date,
+        "services":      meeting.Services,
+        "meetingStatus": meeting.MeetingStatus,
+        "createdAt":     meeting.CreatedAt,
+        "updatedAt":     meeting.UpdatedAt,
+    })
+    if err != nil {
+        return Meeting{}, err
+    }
+
+    return meeting, nil
 }
 
-func CancelMeeting(meetingID string) error {
-	mu.Lock()
-	defer mu.Unlock()
 
-	// Find the meeting
-	meeting, exists := meetingsStore[meetingID]
-	if !exists {
-		return errors.New("meeting not found")
-	}
+// if the user is volunteer, update the recipient's service statuses
+// if the user is recipient, cancel the meeting, in the client side the recipient will be updated
+func CancelMeeting(meetingID string, userUID string) error {
+    // Create a context with timeout
+    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+    defer cancel()
 
-	// Get the recipient
-	recipient, exists := usersStore[meeting.Recipient.ID]
-	if !exists {
-		return errors.New("recipient not found")
-	}
+    // Find the meeting in MongoDB
+    var meeting Meeting
+    err := database.MeetingsCollection.FindOne(ctx, bson.M{"_id": meetingID}).Decode(&meeting)
+    if err != nil {
+        if err == mongo.ErrNoDocuments {
+            return errors.New("meeting not found")
+        }
+        return err
+    }
 
-	// Update recipient's status back to NEED_ASSISTANCE
-	recipient.AssistanceStatus = NeedAssistance
-	usersStore[recipient.ID] = recipient
+    // Get the user who is cancelling
+    var user User
+    err = database.UsersCollection.FindOne(ctx, bson.M{"_id": userUID}).Decode(&user)
+    if err != nil {
+        if err == mongo.ErrNoDocuments {
+            return errors.New("user not found")
+        }
+        return err
+    }
 
-	// Remove the meeting
-	delete(meetingsStore, meetingID)
+    // If a volunteer is cancelling, update recipient's service statuses
+    if user.Role == Volunteer {
+        var recipient User
+        err = database.UsersCollection.FindOne(ctx, bson.M{"_id": meeting.RecipientID}).Decode(&recipient)
+        if err != nil {
+            if err == mongo.ErrNoDocuments {
+                return errors.New("recipient not found")
+            }
+            return err
+        }
 
-	return nil
+        // Create a map of field updates for MongoDB
+        servicesUpdate := make(map[string]interface{})
+        for _, service := range meeting.Services {
+            servicesUpdate[fmt.Sprintf("services.%s", service)] = string(NeedAssistance)
+        }
+
+        // Update the recipient's services in MongoDB
+        _, err = database.UsersCollection.UpdateOne(
+            ctx,
+            bson.M{"_id": recipient.ID},
+            bson.M{"$set": servicesUpdate},
+        )
+        if err != nil {
+            return err
+        }
+    }
+
+    // Delete the meeting from MongoDB
+    _, err = database.MeetingsCollection.DeleteOne(ctx, bson.M{"_id": meetingID})
+    if err != nil {
+        return err
+    }
+
+    return nil
 }
+
 
 func GetMeetings(userId string, status MeetingStatus) ([]Meeting, error) {
-    mu.Lock()
-    defer mu.Unlock()
+    // Create a context with timeout
+    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+    defer cancel()
 
-    var filteredMeetings []Meeting
-
-    // If no filters provided, return all meetings
-    if userId == "" && status == "" {
-        // Convert map to slice
-        for _, meeting := range meetingsStore {
-            filteredMeetings = append(filteredMeetings, meeting)
+    // Build a filter based on the provided parameters
+    filter := bson.M{}
+    if userId != "" {
+        // Filter meetings where user is either recipient or volunteer
+        filter["$or"] = []bson.M{
+            {"recipientId": userId},
+            {"volunteerId": userId},
         }
-        return filteredMeetings, nil
+    }
+    if status != "" {
+        filter["meetingStatus"] = status
     }
 
-    // Filter meetings based on provided parameters
-    for _, meeting := range meetingsStore {
-        // Check user ID filter if provided
-        if userId != "" {
-            if meeting.Recipient.ID != userId && meeting.Volunteer.ID != userId {
-                continue // Skip if neither recipient nor volunteer matches
-            }
-        }
+    // Find meetings in MongoDB that match the filter
+    cursor, err := database.MeetingsCollection.Find(ctx, filter)
+    if err != nil {
+        return nil, err
+    }
+    defer cursor.Close(ctx)
 
-        // Check status filter if provided
-        if status != "" {
-            if meeting.MeetingStatus != status {
-                continue // Skip if status doesn't match
-            }
-        }
-
-        // If we get here, the meeting matches all provided filters
-        filteredMeetings = append(filteredMeetings, meeting)
+    // Decode meetings from MongoDB
+    var meetingsData []Meeting
+    if err = cursor.All(ctx, &meetingsData); err != nil {
+        return nil, err
     }
 
-    return filteredMeetings, nil
+    // Load user details for each meeting
+    var meetings []Meeting
+    for _, m := range meetingsData {
+        // Get recipient details
+        var recipient User
+        err = database.UsersCollection.FindOne(ctx, bson.M{"_id": m.RecipientID}).Decode(&recipient)
+        if err != nil {
+            return nil, fmt.Errorf("failed to load recipient data: %v", err)
+        }
+
+        // Get volunteer details
+        var volunteer User
+        err = database.UsersCollection.FindOne(ctx, bson.M{"_id": m.VolunteerID}).Decode(&volunteer)
+        if err != nil {
+            return nil, fmt.Errorf("failed to load volunteer data: %v", err)
+        }
+
+        // Populate meeting with user details for API response
+        m.Recipient = recipient
+        m.Volunteer = volunteer
+        meetings = append(meetings, m)
+    }
+
+    return meetings, nil
 }
 
 
 func UpdateMeetingStatus(meetingID string, newStatus MeetingStatus) (Meeting, error) {
-    mu.Lock()
-    defer mu.Unlock()
+    // Create a context with timeout
+    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+    defer cancel()
 
-    // Find the meeting
-    meeting, exists := meetingsStore[meetingID]
-    if !exists {
-        return Meeting{}, errors.New("meeting not found")
+    // Find the meeting in MongoDB
+    var meeting Meeting
+    err := database.MeetingsCollection.FindOne(ctx, bson.M{"_id": meetingID}).Decode(&meeting)
+    if err != nil {
+        if err == mongo.ErrNoDocuments {
+            return Meeting{}, errors.New("meeting not found")
+        }
+        return Meeting{}, err
     }
 
-    // Update the status
-    meeting.MeetingStatus = newStatus
-    meeting.UpdatedAt = time.Now()
+    // Update the meeting status in MongoDB
+    now := time.Now()
+    _, err = database.MeetingsCollection.UpdateOne(
+        ctx,
+        bson.M{"_id": meetingID},
+        bson.M{"$set": bson.M{
+            "meetingStatus": newStatus,
+            "updatedAt":     now,
+        }},
+    )
+    if err != nil {
+        return Meeting{}, err
+    }
 
-    // Save back to store
-    meetingsStore[meetingID] = meeting
+    // Update the meeting object with the new status
+    meeting.MeetingStatus = newStatus
+    meeting.UpdatedAt = now
+    
+    // Load user details for API response
+    var recipient User
+    err = database.UsersCollection.FindOne(ctx, bson.M{"_id": meeting.RecipientID}).Decode(&recipient)
+    if err != nil {
+        return Meeting{}, fmt.Errorf("failed to load recipient data: %v", err)
+    }
+
+    var volunteer User
+    err = database.UsersCollection.FindOne(ctx, bson.M{"_id": meeting.VolunteerID}).Decode(&volunteer)
+    if err != nil {
+        return Meeting{}, fmt.Errorf("failed to load volunteer data: %v", err)
+    }
+
+    // Set user data for API response
+    meeting.Recipient = recipient
+    meeting.Volunteer = volunteer
 
     return meeting, nil
 }

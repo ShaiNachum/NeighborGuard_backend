@@ -18,16 +18,6 @@ definitions:
       street:
         type: string
     type: object
-  services.AssistanceStatus:
-    enum:
-    - DO_NOT_NEED_ASSISTANCE
-    - NEED_ASSISTANCE
-    - IN_PROGRESS
-    type: string
-    x-enum-varnames:
-    - DoNotNeedAssistance
-    - NeedAssistance
-    - InProgress
   services.Gender:
     enum:
     - MALE
@@ -52,14 +42,36 @@ definitions:
       meetingStatus:
         $ref: '#/definitions/services.MeetingStatus'
       recipient:
-        $ref: '#/definitions/services.User'
+        allOf:
+        - $ref: '#/definitions/services.User'
+        description: Not stored directly in MongoDB
+      services:
+        items:
+          type: string
+        type: array
       uid:
         type: string
       updatedAt:
         type: string
       volunteer:
-        $ref: '#/definitions/services.User'
+        allOf:
+        - $ref: '#/definitions/services.User'
+        description: Not stored directly in MongoDB
     type: object
+  services.MeetingAssistanceStatus:
+    enum:
+    - DO_NOT_NEED_ASSISTANCE
+    - NEED_ASSISTANCE
+    - IN_PROGRESS
+    - PROVIDE
+    - DO_NOT_PROVIDE
+    type: string
+    x-enum-varnames:
+    - DoNotNeedAssistance
+    - NeedAssistance
+    - InProgress
+    - Provide
+    - DoNotProvide
   services.MeetingStatus:
     enum:
     - IS_PICKED
@@ -76,6 +88,11 @@ definitions:
         $ref: '#/definitions/services.MeetingStatus'
       recipient:
         $ref: '#/definitions/services.User'
+      services:
+        description: list of services that will be provided on this meeting
+        items:
+          type: string
+        type: array
       volunteer:
         $ref: '#/definitions/services.User'
     type: object
@@ -85,8 +102,6 @@ definitions:
         $ref: '#/definitions/services.Address'
       age:
         type: integer
-      assistanceStatus:
-        $ref: '#/definitions/services.AssistanceStatus'
       email:
         type: string
       firstName:
@@ -112,9 +127,10 @@ definitions:
       role:
         $ref: '#/definitions/services.Role'
       services:
-        items:
-          type: string
-        type: array
+        additionalProperties:
+          $ref: '#/definitions/services.MeetingAssistanceStatus'
+        description: map[ServiceName]MeetingAssistanceStatus
+        type: object
     type: object
   services.Role:
     enum:
@@ -130,8 +146,6 @@ definitions:
         $ref: '#/definitions/services.Address'
       age:
         type: integer
-      assistanceStatus:
-        $ref: '#/definitions/services.AssistanceStatus'
       createdAt:
         type: string
       email:
@@ -159,9 +173,9 @@ definitions:
       role:
         $ref: '#/definitions/services.Role'
       services:
-        items:
-          type: string
-        type: array
+        additionalProperties:
+          $ref: '#/definitions/services.MeetingAssistanceStatus'
+        type: object
       uid:
         type: string
       updatedAt:
@@ -207,20 +221,31 @@ paths:
       summary: Create a new meeting
       tags:
       - meeting
-  /meeting/{id}:
+  /meeting/{uid}/{userID}:
     delete:
-      description: Cancel a meeting and update recipient's status
+      description: Cancel a meeting by its ID and the user cancelling
       parameters:
-      - description: Meeting ID
+      - description: Meeting ID to cancel
         in: path
-        name: id
+        name: uid
+        required: true
+        type: string
+      - description: ID of the user cancelling the meeting
+        in: path
+        name: userID
         required: true
         type: string
       produces:
       - application/json
       responses:
-        "200":
-          description: OK
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
         "404":
           description: Not Found
           schema:
@@ -236,7 +261,7 @@ paths:
       summary: Cancel an existing meeting
       tags:
       - meeting
-  /meeting/{id}/status:
+  /meeting/{uid}/status:
     put:
       consumes:
       - application/json
@@ -377,46 +402,6 @@ paths:
       summary: Get user by email
       tags:
       - user
-  /users:
-    get:
-      description: Get all users with optional filters
-      parameters:
-      - description: Email to filter users
-        in: query
-        name: email
-        type: string
-      - description: Role to filter users
-        in: query
-        name: role
-        type: string
-      - description: Filter by latitude
-        in: query
-        name: filterByLat
-        type: number
-      - description: Filter by longitude
-        in: query
-        name: filterByLon
-        type: number
-      - description: Is required assistance
-        in: query
-        name: isRequiredAssistance
-        type: boolean
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/schemas.SearchUsersResponseSchema'
-        "404":
-          description: Not Found
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      summary: Get all users
-      tags:
-      - users
   /users/{uid}:
     put:
       consumes:

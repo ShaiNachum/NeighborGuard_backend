@@ -1,17 +1,24 @@
 package services
 
 import (
+	"context"
 	"errors"
-	"fmt"
+	"neighborguard/pkg/database"
 	"sort"
 	"time"
+	"fmt"
 
 	"github.com/umahmood/haversine"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
 )
+
+
 
 type Gender string
 type Role string
-type AssistanceStatus string
+type MeetingAssistanceStatus string
 
 const (
 	Male   Gender = "MALE"
@@ -24,62 +31,60 @@ const (
 )
 
 const (
-	DoNotNeedAssistance AssistanceStatus = "DO_NOT_NEED_ASSISTANCE"
-	NeedAssistance      AssistanceStatus = "NEED_ASSISTANCE"
-	InProgress          AssistanceStatus = "IN_PROGRESS"
+	DoNotNeedAssistance MeetingAssistanceStatus = "DO_NOT_NEED_ASSISTANCE"
+	NeedAssistance      MeetingAssistanceStatus = "NEED_ASSISTANCE"
+	InProgress          MeetingAssistanceStatus = "IN_PROGRESS"
+	Provide             MeetingAssistanceStatus = "PROVIDE"
+	DoNotProvide        MeetingAssistanceStatus = "DO_NOT_PROVIDE"
 )
 
-
 type LonLat struct {
-	Longitude float64 `json:"longitude"`
-	Latitude  float64 `json:"latitude"`
+	Longitude float64 `json:"longitude" bson:"longitude"`
+	Latitude  float64 `json:"latitude" bson:"latitude"`
 }
 
 type Address struct {
-	City            string `json:"city"`
-	Street          string `json:"street"`
-	HouseNumber     int    `json:"houseNumber"`
-	ApartmentNumber int    `json:"apartmentNumber"`
+	City            string `json:"city" bson:"city"`
+	Street          string `json:"street" bson:"street"`
+	HouseNumber     int    `json:"houseNumber" bson:"houseNumber"`
+	ApartmentNumber int    `json:"apartmentNumber" bson:"apartmentNumber"`
 }
 
-
 type NewUser struct {
-	FirstName        string           `json:"firstName"`
-	LastName         string           `json:"lastName"`
-	Age              int              `json:"age"`
-	PhoneNumber      string           `json:"phoneNumber"`
-	Gender           Gender           `json:"gender"`
-	Email            string           `json:"email"`
-	Password         string           `json:"password"`
-	Address          Address          `json:"address"`
-	Languages        []string         `json:"languages"`
-	Services         []string         `json:"services"`
-	Role             Role             `json:"role"`
-	LonLat           LonLat           `json:"lonLat"`
-	LastOK           int64            `json:"lastOK"`
-	ProfileImage     string           `json:"profileImage"`
-	AssistanceStatus AssistanceStatus `json:"assistanceStatus"`
+	FirstName    string                             `json:"firstName"`
+	LastName     string                             `json:"lastName"`
+	Age          int                                `json:"age"`
+	PhoneNumber  string                             `json:"phoneNumber"`
+	Gender       Gender                             `json:"gender"`
+	Email        string                             `json:"email"`
+	Password     string                             `json:"password"`
+	Address      Address                            `json:"address"`
+	Languages    []string                           `json:"languages"`
+	Services     map[string]MeetingAssistanceStatus `json:"services"` //map[ServiceName]MeetingAssistanceStatus
+	Role         Role                               `json:"role"`
+	LonLat       LonLat                             `json:"lonLat"`
+	LastOK       int64                              `json:"lastOK"`
+	ProfileImage string                             `json:"profileImage"`
 }
 
 type User struct {
-	ID               string           `json:"uid"`
-	FirstName        string           `json:"firstName"`
-	LastName         string           `json:"lastName"`
-	Age              int              `json:"age"`
-	PhoneNumber      string           `json:"phoneNumber"`
-	Gender           Gender           `json:"gender"`
-	Email            string           `json:"email"`
-	Password         string           `json:"password"`
-	Address          Address          `json:"address"`
-	Languages        []string         `json:"languages"`
-	Services         []string         `json:"services"`
-	Role             Role             `json:"role"`
-	LonLat           LonLat           `json:"lonLat"`
-	LastOK           int64            `json:"lastOK"`
-	ProfileImage     string           `json:"profileImage"`
-	AssistanceStatus AssistanceStatus `json:"assistanceStatus"`
-	CreatedAt        time.Time        `json:"createdAt"`
-	UpdatedAt        time.Time        `json:"updatedAt"`
+	ID           string                             `json:"uid" bson:"_id,omitempty"`
+	FirstName    string                             `json:"firstName" bson:"firstName"`
+	LastName     string                             `json:"lastName" bson:"lastName"`
+	Age          int                                `json:"age" bson:"age"`
+	PhoneNumber  string                             `json:"phoneNumber" bson:"phoneNumber"`
+	Gender       Gender                             `json:"gender" bson:"gender"`
+	Email        string                             `json:"email" bson:"email"`
+	Password     string                             `json:"password" bson:"password"`
+	Address      Address                            `json:"address" bson:"address"`
+	Languages    []string                           `json:"languages" bson:"languages"`
+	Services     map[string]MeetingAssistanceStatus `json:"services" bson:"services"`
+	Role         Role                               `json:"role" bson:"role"`
+	LonLat       LonLat                             `json:"lonLat" bson:"lonLat"`
+	LastOK       int64                              `json:"lastOK" bson:"lastOK"`
+	ProfileImage string                             `json:"profileImage" bson:"profileImage"`
+	CreatedAt    time.Time                          `json:"createdAt" bson:"createdAt"`
+	UpdatedAt    time.Time                          `json:"updatedAt" bson:"updatedAt"`
 }
 
 
@@ -88,31 +93,42 @@ func GetNearbyRecipients(
 	filterByLat *float64,
 	filterByLon *float64,
 ) ([]User, error) {
-	mu.Lock()
-	defer mu.Unlock()
+	// Create a context with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 
-	// Get and validate volunteer
-	volunteer, exists := usersStore[volunteerUID]
-	if !exists {
-		return nil, errors.New("volunteer not found")
+	// Get the volunteer's details from MongoDB
+	var volunteer User
+	err := database.UsersCollection.FindOne(ctx, bson.M{"_id": volunteerUID}).Decode(&volunteer)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			return nil, errors.New("volunteer not found")
+		}
+		return nil, err
 	}
+
+	// Verify that the user is actually a volunteer
 	if volunteer.Role != Volunteer {
 		return nil, errors.New("only volunteers can use this endpoint")
 	}
 
+	// Find all recipients in the database
+	cursor, err := database.UsersCollection.Find(ctx, bson.M{"role": string(Recipient)})
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	// Load all recipients into memory
 	var recipients []User
-	// Find matching recipients
-	for _, user := range usersStore {
-		// Skip non-recipients
-		if user.Role != Recipient {
-			continue
-		}
+	if err = cursor.All(ctx, &recipients); err != nil {
+		return nil, err
+	}
 
-		if user.AssistanceStatus == InProgress {
-			continue
-		}
-
-		// Check location if filters provided
+	// Apply additional filtering criteria in memory
+	var filtered []User
+	for _, user := range recipients {
+		// Filter by location if coordinates are provided
 		if filterByLat != nil && filterByLon != nil {
 			nearLocation := LonLat{Longitude: *filterByLon, Latitude: *filterByLat}
 			if !isInLocation(user.LonLat, nearLocation) {
@@ -120,174 +136,145 @@ func GetNearbyRecipients(
 			}
 		}
 
-		// Check if user needs assistance
-		if !checkIfUserNeedsAssistance(user) {
-			continue
-		}
-
-		// Check if they share any languages
+		// Check for language match
 		if !hasCommonElements(volunteer.Languages, user.Languages) {
 			continue
 		}
 
-		// Check if they share any services
-		if len(user.Services) > 0 {
-			if !hasCommonElements(volunteer.Services, user.Services) {
-				continue
-			}
+		// Check for service matching and assistance need
+		if !checkAssistanceAndServices(user, volunteer) {
+			continue
 		}
 
-		recipients = append(recipients, user)
+		filtered = append(filtered, user)
 	}
 
-	// Sort recipients by priority
-	sort.Slice(recipients, func(i, j int) bool {
-		// First priority: LastOK time (older = higher priority)
-		if recipients[i].LastOK != recipients[j].LastOK {
-			return recipients[i].LastOK < recipients[j].LastOK
+	// Sort recipients by priority (General Check needs and LastOK time)
+	sort.Slice(filtered, func(i, j int) bool {
+		recipientI := filtered[i]
+		recipientJ := filtered[j]
+
+		// Check if either recipient needs General Check
+		needsGeneralCheckI := recipientI.Services["General Check"] == NeedAssistance
+		needsGeneralCheckJ := recipientJ.Services["General Check"] == NeedAssistance
+
+		// If both have the same General Check status, sort by LastOK time
+		if needsGeneralCheckI == needsGeneralCheckJ {
+			return recipientI.LastOK < recipientJ.LastOK
 		}
-		// Second priority: Number of matching services with volunteer
-		matchingServicesI := countMatchingServices(volunteer.Services, recipients[i].Services)
-		matchingServicesJ := countMatchingServices(volunteer.Services, recipients[j].Services)
-		return matchingServicesI > matchingServicesJ
+
+		// Prioritize recipients who need General Check
+		return needsGeneralCheckI
 	})
 
-	return recipients, nil
+	return filtered, nil
 }
 
-func GetUsers(
-	email string,
-	filterByLat *float64,
-	filterByLon *float64,
-	role Role,
-	isRequiredAssistance bool,
-) ([]User, error) {
-	mu.Lock()
-	defer mu.Unlock()
-
-	if len(usersStore) == 0 {
-		return nil, errors.New("no users found")
-	}
-
-	var users []User
-	for _, user := range usersStore {
-		if email != "" && user.Email != email { //if i pass an email it returns only the user with that email otherwise it returns all users
-			continue
-		}
-
-		if filterByLat != nil && filterByLon != nil {
-			nearLocation := LonLat{Longitude: *filterByLon, Latitude: *filterByLat}
-
-			if !isInLocation(user.LonLat, nearLocation) {
-				continue
-			}
-		}
-
-		if role != "" && role != user.Role {
-			continue
-		}
-
-		if isRequiredAssistance && (user.Role == Volunteer || user.Role == Recipient && !checkIfUserNeedsAssistance(user)) {
-			continue
-		}
-
-		users = append(users, user)
-	}
-
-	return users, nil
-}
 
 func CreateUser(newUser NewUser) (User, error) {
-	mu.Lock()
-	defer mu.Unlock()
+	// Create a context with timeout for database operations
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 
-	now := time.Now()
-	newID := fmt.Sprintf("user_%d", len(usersStore)+1)
-
-	newUserModel := User{
-		ID:               newID,
-		FirstName:        newUser.FirstName,
-		LastName:         newUser.LastName,
-		Age:              newUser.Age,
-		PhoneNumber:      newUser.PhoneNumber,
-		Gender:           newUser.Gender,
-		Email:            newUser.Email,
-		Password:         newUser.Password,
-		Address:          newUser.Address,
-		Languages:        newUser.Languages,
-		Services:         newUser.Services,
-		Role:             newUser.Role,
-		LonLat:           newUser.LonLat,
-		LastOK:           now.Unix(),
-		ProfileImage:     newUser.ProfileImage,
-		AssistanceStatus: newUser.AssistanceStatus,
-		CreatedAt:        now,
-		UpdatedAt:        now,
+	// Check if email already exists to prevent duplicates
+	existingFilter := bson.M{"email": newUser.Email}
+	count, err := database.UsersCollection.CountDocuments(ctx, existingFilter)
+	if err != nil {
+		return User{}, err
+	}
+	if count > 0 {
+		return User{}, errors.New("user with this email already exists")
 	}
 
-	usersStore[newID] = newUserModel
-	return newUserModel, nil
+	// Get current time for timestamps
+	now := time.Now()
+	
+	// Create a new user with a MongoDB ObjectID
+	user := User{
+		ID:           primitive.NewObjectID().Hex(), // Generate a new MongoDB ObjectID
+		FirstName:    newUser.FirstName,
+		LastName:     newUser.LastName,
+		Age:          newUser.Age,
+		PhoneNumber:  newUser.PhoneNumber,
+		Gender:       newUser.Gender,
+		Email:        newUser.Email,
+		Password:     newUser.Password,  // Note: In production, passwords should be hashed
+		Address:      newUser.Address,
+		Languages:    newUser.Languages,
+		Services:     newUser.Services,
+		Role:         newUser.Role,
+		LonLat:       newUser.LonLat,
+		LastOK:       now.Unix(),
+		ProfileImage: newUser.ProfileImage,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	}
+
+	// Insert the user document into MongoDB
+	_, err = database.UsersCollection.InsertOne(ctx, user)
+	if err != nil {
+		return User{}, err
+	}
+
+	return user, nil
 }
 
-func UpdateUser(uid string, updatedUser User) error {
-	mu.Lock()
-	defer mu.Unlock()
 
-	// Check if user exists
-	_, exists := usersStore[uid]
-	if !exists {
-		return errors.New("user not found")
+func UpdateUser(uid string, updatedUser User) error {
+	// Create a context with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Verify the user exists before updating
+	var existingUser User
+	err := database.UsersCollection.FindOne(ctx, bson.M{"_id": uid}).Decode(&existingUser)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			return errors.New("user not found")
+		}
+		return err
 	}
 
-	// Update user data
-	user := usersStore[uid]
-	user.FirstName = updatedUser.FirstName
-	user.LastName = updatedUser.LastName
-	user.PhoneNumber = updatedUser.PhoneNumber
-	user.Languages = updatedUser.Languages
-	user.Services = updatedUser.Services
-	user.Address = updatedUser.Address
-	user.LonLat = updatedUser.LonLat
-	user.LastOK = updatedUser.LastOK
-	user.ProfileImage = updatedUser.ProfileImage
-	user.AssistanceStatus = updatedUser.AssistanceStatus
-	user.UpdatedAt = time.Now()
+	// Create an update operation with the fields to be modified
+	update := bson.M{
+		"$set": bson.M{
+			"firstName":    updatedUser.FirstName,
+			"lastName":     updatedUser.LastName,
+			"phoneNumber":  updatedUser.PhoneNumber,
+			"languages":    updatedUser.Languages,
+			"services":     updatedUser.Services,
+			"address":      updatedUser.Address,
+			"lonLat":       updatedUser.LonLat,
+			"lastOK":       updatedUser.LastOK,
+			"profileImage": updatedUser.ProfileImage,
+			"updatedAt":    time.Now(),
+		},
+	}
 
-	// Save back to store
-	usersStore[uid] = user
-
-	return nil
+	// Execute the update in MongoDB
+	_, err = database.UsersCollection.UpdateOne(ctx, bson.M{"_id": uid}, update)
+	return err
 }
 
 func GetUserByEmail(email string) (*User, error) {
-	mu.Lock()
-	defer mu.Unlock()
+	// Create a context with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 
-	for _, user := range usersStore {
-		if user.Email == email {
-			return &user, nil
+	// Query MongoDB for a user with the specified email
+	var user User
+	err := database.UsersCollection.FindOne(ctx, bson.M{"email": email}).Decode(&user)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			return nil, errors.New("user not found")
 		}
+		return nil, err
 	}
 
-	return nil, errors.New("user not found")
+	return &user, nil
 }
 
 // Helper functions:
-
-// Helper function to count matching services
-func countMatchingServices(volunteerServices, recipientServices []string) int {
-	count := 0
-	serviceSet := make(map[string]bool)
-	for _, service := range volunteerServices {
-		serviceSet[service] = true
-	}
-	for _, service := range recipientServices {
-		if serviceSet[service] {
-			count++
-		}
-	}
-	return count
-}
 
 // Helper function to check if two string slices have any common elements
 func hasCommonElements(slice1, slice2 []string) bool {
@@ -312,22 +299,82 @@ func isInLocation(userLonLat LonLat, nearLocation LonLat) bool {
 	return km <= 1.0
 }
 
-// Helper function to check if the user needs assistance
-func checkIfUserNeedsAssistance(user User) bool {
-	// Check if user needs assistance based on LastOK time
-	timeBasedNeed := time.Now().Unix()-user.LastOK > 60 // 1 minute for testing (should be 24*60*60 for 24 hours)
+func checkAssistanceAndServices(recipient User, volunteer User) bool {
+    // Initialize services map if nil
+    if recipient.Services == nil {
+        recipient.Services = make(map[string]MeetingAssistanceStatus)
+    }
 
-	// Check if recipient has services
-	hasServices := len(user.Services) > 0
+    // Print recipient's services for debugging
+    fmt.Printf("Checking services for recipient %s: %+v\n", recipient.ID, recipient.Services)
 
-	// User needs assistance if either condition is met
-	needsAssistance := timeBasedNeed || hasServices
+    // Check for time-based general check need
+    timeBasedNeed := time.Now().Unix() - recipient.LastOK > 60 // 1 minute for testing
+    
+    // Track if services were updated
+    updated := false
+    
+    // If time-based need detected, update General Check status in MongoDB
+    if timeBasedNeed && recipient.Services["General Check"] != NeedAssistance && recipient.Services["General Check"] != InProgress {
+        fmt.Printf("Recipient %s needs General Check (time-based)\n", recipient.ID)
+        
+        // Update the recipient's General Check service in MongoDB
+        ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+        defer cancel()
+        
+        // Set the General Check service to NeedAssistance
+        update := bson.M{"$set": bson.M{"services.General Check": string(NeedAssistance)}}
+        
+        // Update the document in MongoDB
+        result, err := database.UsersCollection.UpdateOne(ctx, bson.M{"_id": recipient.ID}, update)
+        if err != nil {
+            // Log the error but continue processing
+            fmt.Printf("Error updating General Check status: %v\n", err)
+        } else {
+            fmt.Printf("Updated General Check status for recipient %s: %+v\n", recipient.ID, result)
+            updated = true
+        }
+        
+        // Also update our local copy of the recipient for this function
+        recipient.Services["General Check"] = NeedAssistance
+    }
 
-	// Update status if user needs assistance and isn't already marked
-	if needsAssistance && user.AssistanceStatus != NeedAssistance {
-		user.AssistanceStatus = NeedAssistance
-		usersStore[user.ID] = user
-	}
+    // Check for any service in NEED_ASSISTANCE that matches volunteer's provided services
+    hasMatchingService := false
+    for service, status := range recipient.Services {
+        // Skip services already in progress
+        if status == InProgress {
+            fmt.Printf("Service %s is already in progress for recipient %s\n", service, recipient.ID)
+            continue
+        }
 
-	return needsAssistance
+        // Check if this service needs assistance and volunteer can provide
+        if status == NeedAssistance && volunteer.Services[service] == Provide {
+            fmt.Printf("Found matching service %s for recipient %s\n", service, recipient.ID)
+            hasMatchingService = true
+            break
+        }
+    }
+
+    // If we updated the recipient's services but didn't find a matching service yet, 
+    // reload the recipient from the database to get the freshest data
+    if updated && !hasMatchingService {
+        ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+        defer cancel()
+        
+        var updatedRecipient User
+        err := database.UsersCollection.FindOne(ctx, bson.M{"_id": recipient.ID}).Decode(&updatedRecipient)
+        if err == nil {
+            // Check again with the fresh data
+            for service, status := range updatedRecipient.Services {
+                if status == NeedAssistance && volunteer.Services[service] == Provide {
+                    fmt.Printf("Found matching service %s for recipient %s after refresh\n", service, recipient.ID)
+                    hasMatchingService = true
+                    break
+                }
+            }
+        }
+    }
+
+    return hasMatchingService
 }

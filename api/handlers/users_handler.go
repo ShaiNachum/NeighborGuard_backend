@@ -10,48 +10,6 @@ import (
 	"github.com/gorilla/mux"
 )
 
-// GetUsers godoc
-// @Summary Get all users
-// @Description Get all users with optional filters
-// @Tags users
-// @Produce json
-// @Param email query string false "Email to filter users"
-// @Param role query string false "Role to filter users"
-// @Param filterByLat query float64 false "Filter by latitude"
-// @Param filterByLon query float64 false "Filter by longitude"
-// @Param isRequiredAssistance query bool false "Is required assistance"
-// @Success 200 {object} schemas.SearchUsersResponseSchema
-// @Failure 404 {object} map[string]string{}
-// @Router /users [get]
-func GetUsers(w http.ResponseWriter, r *http.Request) {
-	email := r.URL.Query().Get("email")
-
-	var filterByLat, filterByLon *float64
-	if filterByLatStr := r.URL.Query().Get("filterByLat"); filterByLatStr != "" {
-		if val, err := strconv.ParseFloat(filterByLatStr, 64); err == nil {
-			filterByLat = &val
-		}
-	}
-	if filterByLonStr := r.URL.Query().Get("filterByLon"); filterByLonStr != "" {
-		if val, err := strconv.ParseFloat(filterByLonStr, 64); err == nil {
-			filterByLon = &val
-		}
-	}
-
-	role := services.Role(r.URL.Query().Get("role"))
-	isRequiredAssistance := r.URL.Query().Get("isRequiredAssistance") == "true"
-
-	users, err := services.GetUsers(email, filterByLat, filterByLon, role, isRequiredAssistance)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	response := schemas.SearchUsersResponseSchema{Users: users}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
-}
-
 // GetNearbyRecipients godoc
 // @Summary Get nearby recipients needing assistance
 // @Description Get recipients who need assistance matching volunteer's languages and services
